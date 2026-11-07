@@ -472,8 +472,23 @@ if(!localStorage.getItem('mp_users'))localStorage.setItem('mp_users',JSON.string
 try{const _u=getUsers();const _owner=_u.find(x=>x.username==='01094548787');if(_owner){_owner.name='المهندس حسام عبد السلام محمد';_owner.role='مدير';_owner.owner=true;_owner.department='الإدارة';localStorage.setItem('mp_users',JSON.stringify(_u));}}catch(e){}
 function toggleLoginPassword(){let p=document.getElementById('loginPass');p.type=p.type==='password'?'text':'password'}
 function showApp(){document.getElementById('loginScreen').style.display='none';let cu=JSON.parse(sessionStorage.getItem('mp_current_user')||'{}');let avatar=document.querySelector('.avatar');if(avatar)avatar.textContent=(cu.name||'M').trim().charAt(0);let name=document.querySelector('.user b');if(name)name.textContent=cu.name||'مدير النظام';let role=document.querySelector('.user .muted');if(role)role.textContent=cu.owner?'صاحب الموقع · المدير العام':(cu.role==='مدير'?'مدير النظام':'موظف');applyLanguage();}
-function logout(){sessionStorage.removeItem('alm_logged_in');document.getElementById('loginScreen').style.display='flex';document.getElementById('loginPass').value='';}
-document.getElementById('loginForm').addEventListener('submit',e=>{e.preventDefault();let u=document.getElementById('loginUser').value.trim(),p=document.getElementById('loginPass').value,a=getUsers().find(x=>x.username===u&&x.password===p&&x.status!=='موقوف');if(a){sessionStorage.setItem('alm_logged_in','1');sessionStorage.setItem('mp_current_user',JSON.stringify({username:a.username,name:a.name,role:a.role}));document.getElementById('loginError').style.display='none';showApp()}else{let er=document.getElementById('loginError');er.textContent='اسم المستخدم أو كلمة المرور غير صحيحة أو الحساب موقوف';er.style.display='block'}});
+async function logout(){sessionStorage.removeItem('alm_logged_in');sessionStorage.removeItem('mp_current_user');if(window.MPCloud)await window.MPCloud.signOut();document.getElementById('loginScreen').style.display='flex';document.getElementById('loginPass').value='';}
+document.getElementById('loginForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ const u=document.getElementById('loginUser').value.trim(),p=document.getElementById('loginPass').value;
+ const er=document.getElementById('loginError'),btn=e.currentTarget.querySelector('button[type="submit"]');
+ er.style.display='none';
+ if(window.MPCloud && window.MPCloud.isReady()){
+   btn.disabled=true;btn.querySelector('span').textContent='جارٍ التحقق...';
+   try{await window.MPCloud.signInWithPhone(u,p);}
+   catch(err){er.textContent=err.message||'تعذر تسجيل الدخول. تحقق من بيانات الحساب.';er.style.display='block';}
+   finally{btn.disabled=false;btn.querySelector('span').textContent=currentLang==='en'?'Sign In':'تسجيل الدخول';}
+   return;
+ }
+ const a=getUsers().find(x=>x.username===u&&x.password===p&&x.status!=='موقوف');
+ if(a){sessionStorage.setItem('alm_logged_in','1');sessionStorage.setItem('mp_current_user',JSON.stringify({username:a.username,name:a.name,role:a.role,owner:!!a.owner}));showApp();}
+ else{er.textContent='اسم المستخدم أو كلمة المرور غير صحيحة أو الحساب موقوف';er.style.display='block';}
+});
 function changeCredentials(){if(sessionStorage.getItem('alm_logged_in')!=='1')return;let current=JSON.parse(sessionStorage.getItem('mp_current_user')||'{}');let users=getUsers(),idx=users.findIndex(x=>x.username===current.username);if(idx<0)return;let old=prompt('اكتب كلمة المرور الحالية للتأكيد:');if(old!==users[idx].password){alert('كلمة المرور الحالية غير صحيحة');return}let u=prompt('اسم المستخدم الجديد:',users[idx].username);if(u===null)return;let pw=prompt('كلمة المرور الجديدة (اتركها فارغة دون تغيير):');if(pw===null)return;if(pw&&pw.length<4){alert('كلمة المرور قصيرة جداً');return}users[idx].username=u.trim();if(pw)users[idx].password=pw;localStorage.setItem('mp_users',JSON.stringify(users));sessionStorage.setItem('mp_current_user',JSON.stringify({username:users[idx].username,name:users[idx].name,role:users[idx].role}));alert('تم تحديث الحساب على هذا المتصفح.');}
 if(sessionStorage.getItem('alm_logged_in')==='1')showApp();
 document.documentElement.dataset.theme=localStorage.getItem('alm_theme')||'light';render();if(currentLang==='en')applyLanguage();
