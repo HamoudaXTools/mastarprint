@@ -119,7 +119,10 @@
       if (error) status('تعذر حفظ التغييرات: ' + error.message, 'error'); else status('تم حفظ التغييرات على السحابة', 'ok');
     }, 700);
   }
-  window.MPCloud = { signIn, signInWithCredentials, signOut, queueSave, requestPasswordReset, isReady: () => ready };
+  // Backward-compatible alias: older deployed login pages call signInWithPhone.
+  // The current login form accepts email/password, so route both names to Supabase Auth.
+  const signInWithPhone = signInWithCredentials;
+  window.MPCloud = { signIn, signInWithCredentials, signInWithPhone, signOut, queueSave, requestPasswordReset, isReady: () => ready };
   window.addEventListener('DOMContentLoaded', () => {
     const bar = document.createElement('div');
     bar.style.cssText = 'display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;padding:9px;background:#eef5ff;color:#123;border-bottom:1px solid #cbd5e1;font:13px Arial;direction:rtl';
