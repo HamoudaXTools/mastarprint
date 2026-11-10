@@ -111,6 +111,43 @@
     if (channel) await client.removeChannel(channel);
     companyId = null; channel = null; status('تم تسجيل الخروج من السحابة');
   }
+  async function listCompanyProfiles() {
+    if (!client || !companyId) throw new Error('يجب تسجيل الدخول أولاً.');
+    const { data, error } = await client.from('profiles').select('id,full_name,email,role,is_active,department,created_at').eq('company_id', companyId).order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+  }
+  async function createCompanyUser({ email, password, fullName, role, department }) {
+    if (!client || !companyId) throw new Error('يجب تسجيل الدخول أولاً.');
+    const { data: current } = await client.auth.getUser();
+    if (!current.user) throw new Error('انتهت جلسة المدير. سجّل الدخول مجددًا.');
+    const { data: me, error: meError } = await client.from('profiles').select('role,company_id,is_active').eq('id', current.user.id).single();
+    if (meError || !me || !me.is_active || !['owner','admin'].includes(me.role)) throw new Error('ليس لديك صلاحية إنشاء حسابات.');
+    // A separate non-persistent client prevents signUp from replacing the owner's active session.
+    const signupClient = window.supabase.createClient(config.url, config.publishableKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    const { data, error } = await signupClient.auth.signUp({
+      email: String(email).trim().toLowerCase(), password,
+      options: { data: { full_name: fullName, company_id: companyId } }
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error('Supabase لم يُرجع مستخدمًا جديدًا.');
+    const profileRole = role === 'مدير' ? 'manager' : 'employee';
+    const { error: profileError } = await client.from('profiles').insert({
+      id: data.user.id, company_id: companyId, full_name: fullName, email: String(email).trim().toLowerCase(),
+      role: profileRole, is_active: true, department: department || null
+    });
+    if (profileError) throw new Error('تم إنشاء حساب Auth لكن تعذرت إضافة ملف الموظف: ' + profileError.message);
+    return { email: data.user.email, confirmationRequired: !data.session };
+  }
+  async function updateCompanyProfile(id, changes) {
+    if (!client || !companyId) throw new Error('يجب تسجيل الدخول أولاً.');
+    const patch = {};
+    if (changes.role) patch.role = changes.role === 'مدير' ? 'manager' : 'employee';
+    if (typeof changes.is_active === 'boolean') patch.is_active = changes.is_active;
+    if (changes.department !== undefined) patch.department = changes.department;
+    const { error } = await client.from('profiles').update(patch).eq('id', id).eq('company_id', companyId);
+    if (error) throw error;
+  }
   function queueSave(state) {
     if (!client || !companyId || applyingRemote) return;
     clearTimeout(timer);
@@ -122,15 +159,8 @@
   // Backward-compatible alias: older deployed login pages call signInWithPhone.
   // The current login form accepts email/password, so route both names to Supabase Auth.
   const signInWithPhone = signInWithCredentials;
-  window.MPCloud = { signIn, signInWithCredentials, signInWithPhone, signOut, queueSave, requestPasswordReset, isReady: () => ready };
+  window.MPCloud = { signIn, signInWithCredentials, signInWithPhone, signOut, queueSave, requestPasswordReset, listCompanyProfiles, createCompanyUser, updateCompanyProfile, isReady: () => ready };
   window.addEventListener('DOMContentLoaded', () => {
-    const bar = document.createElement('div');
-    bar.style.cssText = 'display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;padding:9px;background:#eef5ff;color:#123;border-bottom:1px solid #cbd5e1;font:13px Arial;direction:rtl';
-    bar.innerHTML = '<strong>MASTER PRINT Cloud</strong><span>اربط الموقع بقاعدة البيانات المشتركة</span><button id="mpCloudLogin" style="border:0;border-radius:8px;padding:8px 14px;background:#155eef;color:white;cursor:pointer">تسجيل دخول السحابة</button><button id="mpCloudForgot" style="border:1px solid #94a3b8;border-radius:8px;padding:8px 12px;background:white;cursor:pointer">نسيت كلمة المرور؟</button><button id="mpCloudLogout" style="border:1px solid #94a3b8;border-radius:8px;padding:8px 12px;background:white;cursor:pointer">خروج</button>';
-    document.body.prepend(bar);
-    bar.querySelector('#mpCloudLogin').onclick = signIn;
-    bar.querySelector('#mpCloudForgot').onclick = requestPasswordReset;
-    bar.querySelector('#mpCloudLogout').onclick = signOut;
     if (!ready) status('إعداد رابط المشروع والمفتاح العام غير مكتمل', 'error');
     else {
       client = window.supabase.createClient(config.url, config.publishableKey);
