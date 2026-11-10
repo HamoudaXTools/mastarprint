@@ -50,29 +50,29 @@
   }
   const currentState = () => { try { return JSON.parse(localStorage.getItem('alm_data') || '{}'); } catch (_) { return {}; } };
   async function loadCompany() {
-    const { data: authData } = await client.auth.getUser();
-    if (!authData.user) throw new Error('سجّل الدخول إلى حساب السحابة أولاً.');
-    const { data: profile, error } = await client.from('profiles').select('company_id,role,is_active,full_name').eq('id', authData.user.id).single();
-    if (error || !profile || !profile.is_active) throw new Error('لا يوجد ملف موظف نشط لهذا الحساب. أضف المستخدم إلى جدول profiles أولاً.');
+    const { data: authData, error: authError } = await client.auth.getUser();
+    if (authError) throw new Error('تعذر التحقق من جلسة الدخول: ' + authError.message);
+    if (!authData.user) throw new Error('انتهت جلسة الدخول. سجّل الدخول مرة أخرى.');
+    const { data: profile, error } = await client.from('profiles')
+      .select('company_id,role,is_active,full_name').eq('id', authData.user.id).maybeSingle();
+    if (error) throw new Error('تم التحقق من البريد وكلمة المرور، لكن تعذر قراءة ملف الموظف: ' + error.message);
+    if (!profile) throw new Error('بيانات الدخول صحيحة، لكن لا يوجد سجل لهذا المستخدم في جدول profiles. أضف ملف الموظف واربطه بالشركة.');
+    if (!profile.is_active) throw new Error('هذا الحساب موقوف. راجع مدير النظام.');
+    if (!profile.company_id) throw new Error('حسابك غير مربوط بشركة. راجع قيمة company_id في جدول profiles.');
     companyId = profile.company_id;
     const roleNames = { owner: 'مدير', admin: 'مدير', manager: 'مدير', employee: 'موظف', viewer: 'موظف' };
     sessionStorage.setItem('alm_logged_in', '1');
-    sessionStorage.setItem('mp_current_user', JSON.stringify({
-      username: authData.user.email || authData.user.id,
-      name: profile.full_name || authData.user.email || 'مستخدم',
-      role: roleNames[profile.role] || 'موظف',
-      owner: profile.role === 'owner'
-    }));
+    sessionStorage.setItem('mp_current_user', JSON.stringify({ username: authData.user.email || authData.user.id, name: profile.full_name || authData.user.email || 'مستخدم', role: roleNames[profile.role] || 'موظف', owner: profile.role === 'owner' }));
     const { data: row, error: readError } = await client.from('app_state').select('state').eq('company_id', companyId).maybeSingle();
-    if (readError) throw readError;
-    if (row && row.state) {
+    if (readError) status('تم تسجيل الدخول، لكن تعذر تحميل بيانات السحابة: ' + readError.message, 'error');
+    else if (row && row.state) {
       applyingRemote = true; localStorage.setItem('alm_data', JSON.stringify(row.state));
       if (typeof window.MPApplyCloudState === 'function') window.MPApplyCloudState(row.state);
       applyingRemote = false; status('متصل — تم تحميل بيانات الشركة', 'ok');
     } else {
       const { error: insertError } = await client.from('app_state').insert({ company_id: companyId, state: currentState() });
-      if (insertError) throw insertError;
-      status('متصل — تم رفع بيانات هذا المتصفح لأول مرة', 'ok');
+      if (insertError) status('تم تسجيل الدخول، لكن تعذر إنشاء سجل بيانات الشركة: ' + insertError.message, 'error');
+      else status('متصل — تم تهيئة بيانات الشركة لأول مرة', 'ok');
     }
     if (channel) await client.removeChannel(channel);
     channel = client.channel('master-print-company-' + companyId).on('postgres_changes', { event: '*', schema: 'public', table: 'app_state', filter: 'company_id=eq.' + companyId }, payload => {
