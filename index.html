@@ -472,7 +472,7 @@ if(!localStorage.getItem('mp_users'))localStorage.setItem('mp_users',JSON.string
 try{const _u=getUsers();const _owner=_u.find(x=>x.username==='01094548787');if(_owner){_owner.name='المهندس حسام عبد السلام محمد';_owner.role='مدير';_owner.owner=true;_owner.department='الإدارة';localStorage.setItem('mp_users',JSON.stringify(_u));}}catch(e){}
 function toggleLoginPassword(){let p=document.getElementById('loginPass');p.type=p.type==='password'?'text':'password'}
 function showApp(){document.getElementById('loginScreen').style.display='none';let cu=JSON.parse(sessionStorage.getItem('mp_current_user')||'{}');let avatar=document.querySelector('.avatar');if(avatar)avatar.textContent=(cu.name||'M').trim().charAt(0);let name=document.querySelector('.user b');if(name)name.textContent=cu.name||'مدير النظام';let role=document.querySelector('.user .muted');if(role)role.textContent=cu.owner?'صاحب الموقع · المدير العام':(cu.role==='مدير'?'مدير النظام':'موظف');applyLanguage();}
-async function logout(){sessionStorage.removeItem('alm_logged_in');sessionStorage.removeItem('mp_current_user');if(window.MPCloud)await window.MPCloud.signOut();document.getElementById('loginScreen').style.display='flex';document.getElementById('loginPass').value='';}
+window.MPCloudLoginSuccess=function(){showApp();}; async function logout(){sessionStorage.removeItem('alm_logged_in');sessionStorage.removeItem('mp_current_user');if(window.MPCloud)await window.MPCloud.signOut();document.getElementById('loginScreen').style.display='flex';document.getElementById('loginPass').value='';}
 document.getElementById('loginForm').addEventListener('submit',async e=>{
  e.preventDefault();
  const u=document.getElementById('loginUser').value.trim(),p=document.getElementById('loginPass').value;
@@ -480,7 +480,7 @@ document.getElementById('loginForm').addEventListener('submit',async e=>{
  er.style.display='none';
  if(window.MPCloud && window.MPCloud.isReady()){
    btn.disabled=true;btn.querySelector('span').textContent='جارٍ التحقق...';
-   try{await window.MPCloud.signInWithPhone(u,p);}
+   try{await window.MPCloud.signInWithCredentials(u,p);}
    catch(err){er.textContent=err.message||'تعذر تسجيل الدخول. تحقق من بيانات الحساب.';er.style.display='block';}
    finally{btn.disabled=false;btn.querySelector('span').textContent=currentLang==='en'?'Sign In':'تسجيل الدخول';}
    return;

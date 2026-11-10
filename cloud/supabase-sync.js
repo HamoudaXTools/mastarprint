@@ -52,9 +52,17 @@
   async function loadCompany() {
     const { data: authData } = await client.auth.getUser();
     if (!authData.user) throw new Error('سجّل الدخول إلى حساب السحابة أولاً.');
-    const { data: profile, error } = await client.from('profiles').select('company_id,role,is_active').eq('id', authData.user.id).single();
+    const { data: profile, error } = await client.from('profiles').select('company_id,role,is_active,full_name').eq('id', authData.user.id).single();
     if (error || !profile || !profile.is_active) throw new Error('لا يوجد ملف موظف نشط لهذا الحساب. أضف المستخدم إلى جدول profiles أولاً.');
     companyId = profile.company_id;
+    const roleNames = { owner: 'مدير', admin: 'مدير', manager: 'مدير', employee: 'موظف', viewer: 'موظف' };
+    sessionStorage.setItem('alm_logged_in', '1');
+    sessionStorage.setItem('mp_current_user', JSON.stringify({
+      username: authData.user.email || authData.user.id,
+      name: profile.full_name || authData.user.email || 'مستخدم',
+      role: roleNames[profile.role] || 'موظف',
+      owner: profile.role === 'owner'
+    }));
     const { data: row, error: readError } = await client.from('app_state').select('state').eq('company_id', companyId).maybeSingle();
     if (readError) throw readError;
     if (row && row.state) {
@@ -73,6 +81,22 @@
       if (typeof window.MPApplyCloudState === 'function') window.MPApplyCloudState(payload.new.state);
       applyingRemote = false; status('تم استلام تحديث جديد من الموقع أو التطبيق', 'ok');
     }).subscribe();
+    if (typeof window.MPCloudLoginSuccess === 'function') window.MPCloudLoginSuccess();
+  }
+  function normalizeLoginEmail(identifier) {
+    const value = String(identifier || '').trim();
+    if (value.includes('@')) return value.toLowerCase();
+    const digits = value.replace(/\D/g, '');
+    if (/^01[0-2,5]\d{8}$/.test(digits)) return '20' + digits.slice(1) + '@login.masterprint.invalid';
+    if (/^201[0-2,5]\d{8}$/.test(digits)) return digits + '@login.masterprint.invalid';
+    throw new Error('اكتب البريد الإلكتروني أو رقم الهاتف المسجل في حسابك.');
+  }
+  async function signInWithCredentials(identifier, password) {
+    if (!ready || !client) throw new Error('اتصال Supabase غير جاهز. راجع إعدادات المشروع.');
+    const email = normalizeLoginEmail(identifier);
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    await loadCompany();
   }
   async function signIn() {
     if (!ready) { status('أكمل إعداد supabase-config.js أولاً', 'error'); return; }
@@ -95,7 +119,7 @@
       if (error) status('تعذر حفظ التغييرات: ' + error.message, 'error'); else status('تم حفظ التغييرات على السحابة', 'ok');
     }, 700);
   }
-  window.MPCloud = { signIn, signOut, queueSave, requestPasswordReset, isReady: () => ready };
+  window.MPCloud = { signIn, signInWithCredentials, signOut, queueSave, requestPasswordReset, isReady: () => ready };
   window.addEventListener('DOMContentLoaded', () => {
     const bar = document.createElement('div');
     bar.style.cssText = 'display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;padding:9px;background:#eef5ff;color:#123;border-bottom:1px solid #cbd5e1;font:13px Arial;direction:rtl';
@@ -110,7 +134,6 @@
       client.auth.getSession().then(async ({ data }) => { if (data.session) { try { await loadCompany(); } catch (e) { status(e.message || String(e), 'error'); } } });
       client.auth.onAuthStateChange(async (event, session) => {
         if (event === 'PASSWORD_RECOVERY') showPasswordRecovery();
-        if (event === 'SIGNED_IN' && session && !companyId) { try { await loadCompany(); } catch (e) { status(e.message || String(e), 'error'); } }
       });
     }
   });
